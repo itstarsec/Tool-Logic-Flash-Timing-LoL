@@ -119,4 +119,4 @@ Các biến toàn cục được sử dụng để quản lý trạng thái củ
 
 ---
 
-Nếu bạn có bất kỳ câu hỏi hoặc góp ý nào, vui lòng liên hệ hoặc tạo issue trên repository của chúng tôi. Chúc bạn chơi game vui vẻ và hiệu quả!
+Nếu bạn có bất kỳ câu hỏi hoặc góp ý nào, vui lòng liên hệ hoặc tạo issue trên repository của tôi. Chúc bạn chơi game vui vẻ và hiệu quả!
