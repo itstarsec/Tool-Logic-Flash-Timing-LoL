@@ -14,8 +14,37 @@ from pycaw.pycaw import AudioUtilities
 # Bỏ qua các cảnh báo không an toàn
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Tìm đường dẫn trò chơi
-gamedir = r"C:\Riot Games\League of Legends"
+def find_game_directory():
+    possible_executables = [
+        'LeagueClient.exe',
+        'LeagueClientUxRender.exe'
+    ]
+
+    for process in psutil.process_iter(['pid', 'name', 'exe']):
+        try:
+            process_name = process.info['name']
+            if process_name in possible_executables:
+                exe_path = process.info['exe']
+                if exe_path:
+                    print(f"Found {process_name} at: {exe_path}")
+                    return os.path.dirname(exe_path)
+        except (psutil.AccessDenied, psutil.ZombieProcess, psutil.NoSuchProcess) as e:
+            print(f"Error accessing process {process.info['name']}: {e}")
+            continue
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            continue
+
+    print("Không thể tìm thấy đường dẫn trò chơi. Vui lòng đảm bảo League of Legends đang chạy.")
+    return None
+
+# Tìm đường dẫn trò chơi ngay khi mở tệp
+gamedir = find_game_directory()
+if gamedir is None:
+    print("Không thể tìm thấy đường dẫn trò chơi. Vui lòng kiểm tra xem League of Legends có đang chạy không.")
+    sys.exit(1)
+else:
+    print(f"Đường dẫn trò chơi được tìm thấy: {gamedir}")
 
 # Khởi tạo thời gian game
 current_time = 0  # Thời gian hiện tại được khởi tạo
@@ -83,7 +112,7 @@ def is_sound_playing(process_name):
                 if volume and volume.GetMasterVolume() > 0:
                     return True
     return False
-
+    
 def monitor_process(process_name):
     """Theo dõi process và kiểm tra âm thanh phát ra."""
     global stop_threads
@@ -170,6 +199,7 @@ def check_game_phase(headers):
         # Đợi 5 giây trước khi gửi yêu cầu tiếp theo
         time.sleep(5)
     return True
+
 def main():
     global stop_threads, host, port
     while True:
