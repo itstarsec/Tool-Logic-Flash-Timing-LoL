@@ -1,5 +1,5 @@
 # League of Legends Timer Tool
-## Link download file exe: https://sdc.fdrive.vn/s/33SqJX9xJdX7sCm
+## Link download file exe: ```https://sdc.fdrive.vn/s/ADzNRc7Qkip3jsk```
 ## Nhớ cài đặt Python và các thư viện sau: ``` pip install pyqt5 keyboard pycaw psutil pyautogui requests ```
 ## Mục đích
 Công cụ này được thiết kế để hỗ trợ người chơi **League of Legends** trong việc theo dõi thời gian hồi chiêu của các kỹ năng, đặc biệt là Flash. Công cụ sẽ tự động bắt đầu tính thời gian khi phát hiện âm thanh từ game và cho phép người dùng theo dõi thời gian hồi chiêu bằng cách nhấn phím `F5`.
