@@ -5,14 +5,15 @@ COMBINED LOL TOOL (ULTRA-LIGHT, NO LCU/PSUTIL, NO CHAMP MAP)
 (A) TAB Ping Click Learner (RAM only)
     - Shift+S: Learn ON/OFF (left click to record points)
     - Shift+C: Clear points
-    - Tab + Space (any order): Replay ONCE (anti-spam holding key) + initial delay before first click
+    - Tab + Space (any order): Replay ONCE (anti-spam holding key)
+      + Requirement: Space must be held >= 0.05s before combo can fire
+      + Tab can be pressed before or after Space (both orders work)
     - REMOVED: Tab-alone trigger
 
 (B) Coach Flash Tracker (Live Client Data API only)
     - ONLY uses gameData.gameTime (no allPlayers parsing)
     - Alt+F5..F9: log Flash TOP/JG/MID/AD/SP (overwrite per lane)
-    - F6: chat summary ONLY:
-          "MID 24:39 (-04:17) | JG 25:10 (-04:48)" or "ALL FLASH UP"
+    - F6: chat summary ONLY: "MID 24:39 (-04:17) | JG ..." or "ALL FLASH UP"
     - F5: auto suggestion (fight window / safe push)
     - Ctrl+Q: Exit
 """
@@ -35,6 +36,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 INITIAL_DELAY_BEFORE_FIRST_CLICK = 0.50
 CLICK_INTERVAL_SEC = 0.08
 CLICK_HOLD_SEC = 0.07
+
+# Space must be held long enough before chord can fire
+SPACE_HOLD_BEFORE_FIRE_SEC = 0.5
 
 # =========================
 # CONFIG (B) Flash tracker
@@ -79,8 +83,12 @@ tab_points = []
 # --- COMBO ONLY: TAB + SPACE ---
 tab_down = False
 space_down = False
-tab_space_fired = False     # anti-spam: chord fired once per hold
-tab_replay_running = False  # anti re-entry
+tab_space_fired = False      # anti-spam: fire once per hold
+tab_replay_running = False   # anti re-entry
+
+# Track Space hold time + a token to avoid stale timers
+space_pressed_at = 0.0
+space_hold_token = 0
 
 def tab_toggle_learning():
     global tab_learning, tab_points
@@ -140,42 +148,82 @@ def on_mouse_click_record(x, y, button, pressed):
         total = len(tab_points)
     print(f"[LEARN] + ({int(x)},{int(y)}) total={total}")
 
-def _try_fire_tab_space():
+def _try_fire_tab_space(force_after_hold: bool = False):
     """
-    Chỉ trigger khi BOTH Tab và Space đang giữ.
-    Bất kể thứ tự nhấn.
-    Anti-spam: chỉ 1 lần cho mỗi lần giữ chord (tab_space_fired).
+    Fire when BOTH Tab & Space are held.
+    Requirement: Space has been held >= SPACE_HOLD_BEFORE_FIRE_SEC
+    - If force_after_hold=True: this call is executed after waiting threshold,
+      so we don't need to re-check the elapsed time, but we still require both keys down.
+    Anti-spam: fire once per chord hold.
     """
     global tab_space_fired
+    now = time.perf_counter()
+
     with tab_lock:
         if tab_space_fired:
             return
-        if tab_down and space_down:
-            tab_space_fired = True
-            threading.Thread(target=tab_replay_points_once, daemon=True).start()
+        if not (tab_down and space_down):
+            return
+
+        if not force_after_hold:
+            if space_pressed_at <= 0.0:
+                return
+            if (now - space_pressed_at) < SPACE_HOLD_BEFORE_FIRE_SEC:
+                return
+
+        tab_space_fired = True
+
+    threading.Thread(target=tab_replay_points_once, daemon=True).start()
+
+def _space_hold_timer(my_token: int):
+    """
+    After SPACE_HOLD_BEFORE_FIRE_SEC, if space is still held and token matches,
+    try firing (so case 'Tab first -> hold Space 0.05s -> fire' works).
+    """
+    time.sleep(SPACE_HOLD_BEFORE_FIRE_SEC)
+    if stop_all.is_set():
+        return
+    with tab_lock:
+        if my_token != space_hold_token:
+            return
+        if not space_down:
+            return
+    _try_fire_tab_space(force_after_hold=True)
 
 def tab_on_press(_e):
     global tab_down
     with tab_lock:
         tab_down = True
-    _try_fire_tab_space()  # chỉ chord mới fire
+    # If Space is already held >= threshold, this will fire immediately.
+    _try_fire_tab_space(force_after_hold=False)
 
 def tab_on_release(_e):
     global tab_down, tab_space_fired
     with tab_lock:
         tab_down = False
-        tab_space_fired = False  # nhả 1 phím -> chord lần sau được phép
+        tab_space_fired = False  # release -> allow next chord
 
 def space_on_press(_e):
-    global space_down
+    global space_down, space_pressed_at, space_hold_token
     with tab_lock:
         space_down = True
-    _try_fire_tab_space()
+        space_pressed_at = time.perf_counter()
+        space_hold_token += 1
+        my_token = space_hold_token
+
+    # Start a timer: after 0.05s, if Tab is held too -> fire (Tab can be before or after).
+    threading.Thread(target=_space_hold_timer, args=(my_token,), daemon=True).start()
+
+    # Also attempt immediate fire (works if Space was repeated press but already satisfied,
+    # or if threshold is set to 0).
+    _try_fire_tab_space(force_after_hold=False)
 
 def space_on_release(_e):
-    global space_down, tab_space_fired
+    global space_down, tab_space_fired, space_pressed_at, space_hold_token
     with tab_lock:
         space_down = False
+        space_pressed_at = 0.0
+        space_hold_token += 1  # invalidate any pending timer
         tab_space_fired = False
 
 # ======================================================
@@ -358,7 +406,7 @@ def register_hotkeys():
     keyboard.add_hotkey('shift+s', tab_toggle_learning)
     keyboard.add_hotkey('shift+c', tab_clear_points)
 
-    # COMBO ONLY: Tab + Space
+    # COMBO ONLY: Tab + Space (any order), Space must be held >= 0.05s
     keyboard.on_press_key('tab', tab_on_press, suppress=False)
     keyboard.on_release_key('tab', tab_on_release, suppress=False)
     keyboard.on_press_key('space', space_on_press, suppress=False)
@@ -408,7 +456,7 @@ def register_hotkeys():
     print("[TAB PING]")
     print("  Shift+S        -> Learn ON/OFF (click trái để ghi điểm)")
     print("  Shift+C        -> Clear điểm")
-    print("  Tab + Space    -> Replay 1 lượt (nhấn thứ tự nào cũng được, giữ phím KHÔNG spam)")
+    print(f"  Tab + Space    -> Replay 1 lượt (any order) BUT Space must be held >= {SPACE_HOLD_BEFORE_FIRE_SEC:.2f}s")
     print("    (Tab đơn / Space đơn: KHÔNG trigger)")
     print("")
     print("[FLASH TRACKER]")
